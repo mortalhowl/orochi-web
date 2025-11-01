@@ -1,7 +1,7 @@
 // ============================================
 // src/app/login/page.tsx (Login Page)
 // ============================================
-import { GoogleSignInButton } from '@/components/google-signin-button'
+import { GoogleSignInButton } from '@/components/auth/google-signin-button'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 

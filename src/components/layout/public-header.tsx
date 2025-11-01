@@ -4,8 +4,8 @@
 import { useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { signOut } from '@/app/auth/actions'
-import { AvatarWithRank } from './avatar-with-rank'
-import { ThemeToggle } from './theme-toggle'
+import { AvatarWithRank } from '../auth/avatar-with-rank'
+import { ThemeToggle } from '../shared/theme-toggle'
 import Link from 'next/link'
 
 type Rank = {

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Header } from '@/components/header'
+import { Header } from '@/components/layout/public-header'
 
 export default async function Home() {
   const supabase = await createClient()

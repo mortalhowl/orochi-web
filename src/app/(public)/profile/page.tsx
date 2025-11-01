@@ -1,8 +1,8 @@
 // src/app/profile/page.tsx
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Header } from '@/components/header'
-import { AvatarWithRank } from '@/components/avatar-with-rank'
+import { Header } from '@/components/layout/public-header'
+import { AvatarWithRank } from '@/components/auth/avatar-with-rank'
 import { 
   getUserPointsSummary, 
   getPointTransactions,
