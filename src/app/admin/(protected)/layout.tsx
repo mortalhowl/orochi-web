@@ -1,7 +1,7 @@
 // src/app/(admin)/layout.tsx
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { checkIsAdmin, getCurrentAdmin } from '@/app/(admin)/admin/auth/actions'
+import { checkIsAdmin, getCurrentAdmin } from '@/app/admin/(protected)/auth/actions'
 import { AdminSidebar } from '@/components/layout/admin-sidebar'
 import { AdminHeader } from '@/components/layout/admin-header'
 import { AdminLayoutClient } from '@/components/layout/admin-layout-client'

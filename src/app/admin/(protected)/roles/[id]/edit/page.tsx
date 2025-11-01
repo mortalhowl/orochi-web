@@ -1,9 +1,17 @@
-// src/app/admin/roles/[id]/edit/page.tsx
+// src/app/admin/(protected)/roles/[id]/edit/page.tsx
 import { redirect, notFound } from 'next/navigation'
 import { hasPermission, getRoleById, getPermissionsByCategory } from '../../actions'
 import { RoleForm } from '@/components/admin/role-form'
 
-export default async function EditRolePage({ params }: { params: { id: string } }) {
+// ✅ FIX: params giờ là Promise
+export default async function EditRolePage({ 
+  params 
+}: { 
+  params: Promise<{ id: string }> 
+}) {
+  // ✅ PHẢI await params trước!
+  const { id } = await params
+
   // Check permission
   const canUpdate = await hasPermission('roles.update')
   if (!canUpdate) {
@@ -13,7 +21,7 @@ export default async function EditRolePage({ params }: { params: { id: string } 
   // Get role
   let role
   try {
-    role = await getRoleById(params.id)
+    role = await getRoleById(id)
   } catch (error) {
     notFound()
   }
@@ -30,7 +38,7 @@ export default async function EditRolePage({ params }: { params: { id: string } 
         </a>
         <span>›</span>
         <a 
-          href={`/admin/roles/${params.id}`} 
+          href={`/admin/roles/${id}`}
           className="hover:text-slate-900 dark:hover:text-white"
         >
           {role.display_name}

@@ -1,6 +1,6 @@
 // src/app/admin/roles/create/page.tsx
 import { redirect } from 'next/navigation'
-import { hasPermission, getPermissionsByCategory } from '@/app/(admin)/admin/roles/actions'
+import { hasPermission, getPermissionsByCategory } from '@/app/admin/(protected)/roles/actions'
 import { RoleForm } from '@/components/admin/role-form'
 
 export default async function CreateRolePage() {

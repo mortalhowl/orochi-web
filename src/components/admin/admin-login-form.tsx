@@ -3,7 +3,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { signInAdmin } from '@/app/(admin)/admin/auth/actions'
+import { signInAdmin } from '@/app/admin/(protected)/auth/actions'
 import Link from 'next/link'
 
 export function AdminLoginForm() {

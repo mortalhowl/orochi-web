@@ -3,7 +3,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { toggleRoleStatus } from '@/app/(admin)/admin/roles/actions'
+import { toggleRoleStatus } from '@/app/admin/(protected)/roles/actions'
 
 type ToggleRoleButtonProps = {
   roleId: string

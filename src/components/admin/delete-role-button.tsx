@@ -3,7 +3,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteRole } from '@/app/(admin)/admin/roles/actions'
+import { deleteRole } from '@/app/admin/(protected)/roles/actions'
 
 type DeleteRoleButtonProps = {
   roleId: string

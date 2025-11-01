@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signOutAdmin } from '@/app/(admin)/admin/auth/actions'
+import { signOutAdmin } from '@/app/admin/(protected)/auth/actions'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import Link from 'next/link'
 

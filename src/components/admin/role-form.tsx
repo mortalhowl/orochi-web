@@ -3,7 +3,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createRole, updateRole } from '@/app/(admin)/admin/roles/actions'
+import { createRole, updateRole } from '@/app/admin/(protected)/roles/actions'
 import type { Role, PermissionKey } from '@/types/roles.types'
 
 type RoleFormProps = {

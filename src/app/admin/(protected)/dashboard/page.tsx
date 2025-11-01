@@ -1,17 +1,16 @@
-// src/app/(admin)/admin/dashboard/page.tsx
+// src/app/admin/(protected)/dashboard/page.tsx
+// QUAN TRỌNG: File này KHÔNG cần check auth nữa vì layout đã check rồi!
+
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { hasPermission } from '@/app/(admin)/admin/roles/actions'
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient()
+  
+  // KHÔNG cần check user nữa, layout đã check rồi
+  // Chỉ cần lấy data thôi
   const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/admin/login')
-  }
-
-  // Get admin info
+  
+  // Get admin info - KHÔNG cần check null vì layout đã đảm bảo có rồi
   const { data: adminUser } = await supabase
     .from('admin_users')
     .select(`
@@ -19,13 +18,9 @@ export default async function AdminDashboardPage() {
       role:roles(*),
       profile:profiles(*)
     `)
-    .eq('user_id', user.id)
+    .eq('user_id', user!.id)
     .eq('is_active', true)
     .single()
-
-  if (!adminUser) {
-    redirect('/admin/login')
-  }
 
   // Get dashboard stats
   const [
@@ -78,11 +73,11 @@ export default async function AdminDashboardPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">
-          Chào mừng, {adminUser.profile?.full_name || user.email}! 👋
+          Chào mừng, {adminUser?.profile?.full_name || user?.email}! 👋
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Vai trò: <span className="font-semibold" style={{ color: adminUser.role?.color }}>
-            {adminUser.role?.display_name}
+          Vai trò: <span className="font-semibold" style={{ color: adminUser?.role?.color }}>
+            {adminUser?.role?.display_name}
           </span>
         </p>
       </div>

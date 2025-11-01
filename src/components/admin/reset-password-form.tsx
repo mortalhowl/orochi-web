@@ -3,7 +3,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { resetPassword } from '@/app/(admin)/admin/auth/actions'
+import { resetPassword } from '@/app/admin/(protected)/auth/actions'
 
 export function ResetPasswordForm() {
   const router = useRouter()

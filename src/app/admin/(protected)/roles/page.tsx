@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { hasPermission, getAllRoles, getRoleStats } from './actions'
 import Link from 'next/link'
-import { RoleCard } from '@/components/admin/role-card'
 import { DeleteRoleButton } from '@/components/admin/delete-role-button'
 import { ToggleRoleButton } from '@/components/admin/toggle-role-button'
 

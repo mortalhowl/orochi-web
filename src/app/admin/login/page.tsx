@@ -1,4 +1,6 @@
 // src/app/admin/login/page.tsx
+// QUAN TRỌNG: File này KHÔNG nằm trong (protected) nên không có layout check auth
+
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { AdminLoginForm } from '@/components/admin/admin-login-form'
@@ -7,21 +9,27 @@ export default async function AdminLoginPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // If already logged in, check if admin
+  // Nếu đã login
   if (user) {
-    // Check if user is admin
-    const { data: adminUser } = await supabase
+    // Check xem có phải admin không
+    const { data: adminUser, error } = await supabase
       .from('admin_users')
-      .select('id')
+      .select('id, is_active')
       .eq('user_id', user.id)
-      .eq('is_active', true)
       .single()
 
-    if (adminUser) {
-      // Is admin, redirect to dashboard
+    // Nếu có lỗi query (network, RLS, etc) → Sign out và cho login lại
+    if (error) {
+      console.error('Error checking admin status:', error)
+      await supabase.auth.signOut()
+      // KHÔNG redirect, để người dùng thấy trang login với message lỗi
+    }
+    // Nếu là admin active → redirect dashboard
+    else if (adminUser && adminUser.is_active) {
       redirect('/admin/dashboard')
-    } else {
-      // Not admin, sign out and show login
+    }
+    // Nếu không phải admin hoặc bị inactive → Sign out
+    else {
       await supabase.auth.signOut()
     }
   }
@@ -88,7 +96,6 @@ export default async function AdminLoginPage() {
   )
 }
 
-// Add metadata
 export const metadata = {
   title: 'Admin Login - Orochi',
   description: 'Admin portal login page',

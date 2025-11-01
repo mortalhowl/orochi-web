@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { sendPasswordResetEmail } from '@/app/(admin)/admin/auth/actions'
+import { sendPasswordResetEmail } from '@/app/admin/(protected)/auth/actions'
 
 export function ForgotPasswordForm() {
   const [isPending, startTransition] = useTransition()

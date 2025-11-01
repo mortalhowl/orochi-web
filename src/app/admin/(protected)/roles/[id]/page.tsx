@@ -1,11 +1,19 @@
-// src/app/admin/roles/[id]/page.tsx
+// src/app/admin/(protected)/roles/[id]/page.tsx
 import { redirect, notFound } from 'next/navigation'
 import { hasPermission, getRoleById, getRoleStats, getAllPermissions } from '../actions'
 import Link from 'next/link'
 import { DeleteRoleButton } from '@/components/admin/delete-role-button'
 import { ToggleRoleButton } from '@/components/admin/toggle-role-button'
 
-export default async function RoleDetailPage({ params }: { params: { id: string } }) {
+// ✅ FIX: params giờ là Promise
+export default async function RoleDetailPage({ 
+  params 
+}: { 
+  params: Promise<{ id: string }> 
+}) {
+  // ✅ PHẢI await params trước!
+  const { id } = await params
+
   // Check permission
   const canView = await hasPermission('roles.view')
   if (!canView) {
@@ -18,13 +26,13 @@ export default async function RoleDetailPage({ params }: { params: { id: string 
   // Get role
   let role
   try {
-    role = await getRoleById(params.id)
+    role = await getRoleById(id)
   } catch (error) {
     notFound()
   }
 
   // Get stats
-  const stats = await getRoleStats(params.id)
+  const stats = await getRoleStats(id)
 
   // Get all permissions for display
   const allPermissions = await getAllPermissions()
@@ -90,7 +98,7 @@ export default async function RoleDetailPage({ params }: { params: { id: string 
           {canUpdate && (
             <>
               <Link
-                href={`/admin/roles/${params.id}/edit`}
+                href={`/admin/roles/${id}/edit`}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Chỉnh sửa
