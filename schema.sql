@@ -140,24 +140,24 @@ $$;
 ALTER FUNCTION "public"."auto_update_user_rank"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."generate_order_number"() RETURNS "trigger"
+CREATE OR REPLACE FUNCTION "public"."generate_order_number"() RETURNS "text"
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-  year_str TEXT;
-  count_str TEXT;
   new_number TEXT;
+  date_part TEXT;
+  sequence_part INT;
 BEGIN
-  year_str := TO_CHAR(NOW(), 'YYYY');
+  date_part := TO_CHAR(NOW(), 'YYYYMMDD');
   
-  SELECT LPAD((COUNT(*) + 1)::TEXT, 4, '0') INTO count_str
-  FROM public.orders
-  WHERE EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM NOW());
+  SELECT COALESCE(MAX(CAST(SUBSTRING(order_number FROM 13) AS INT)), 0) + 1
+  INTO sequence_part
+  FROM orders
+  WHERE order_number LIKE 'ORD-' || date_part || '%';
   
-  new_number := 'ORD-' || year_str || '-' || count_str;
-  NEW.order_number := new_number;
+  new_number := 'ORD-' || date_part || '-' || LPAD(sequence_part::TEXT, 3, '0');
   
-  RETURN NEW;
+  RETURN new_number;
 END;
 $$;
 
@@ -189,6 +189,50 @@ $$;
 
 
 ALTER FUNCTION "public"."generate_ticket_code"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."generate_ticket_number"() RETURNS "text"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  new_number TEXT;
+  date_part TEXT;
+  sequence_part INT;
+BEGIN
+  date_part := TO_CHAR(NOW(), 'YYYYMMDD');
+  
+  SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 13) AS INT)), 0) + 1
+  INTO sequence_part
+  FROM tickets
+  WHERE ticket_number LIKE 'TKT-' || date_part || '%';
+  
+  new_number := 'TKT-' || date_part || '-' || LPAD(sequence_part::TEXT, 4, '0');
+  
+  RETURN new_number;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."generate_ticket_number"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."generate_transaction_code"() RETURNS "text"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  result TEXT := '';
+  i INT;
+BEGIN
+  FOR i IN 1..8 LOOP
+    result := result || SUBSTR(chars, FLOOR(RANDOM() * LENGTH(chars) + 1)::INT, 1);
+  END LOOP;
+  RETURN result;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."generate_transaction_code"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."get_user_permissions"("p_user_id" "uuid") RETURNS "jsonb"
@@ -599,7 +643,8 @@ CREATE TABLE IF NOT EXISTS "public"."event_categories" (
     "display_order" integer DEFAULT 0,
     "is_active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "sort_order" integer DEFAULT 0
 );
 
 
@@ -608,75 +653,137 @@ ALTER TABLE "public"."event_categories" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "title" "text" NOT NULL,
     "slug" "text" NOT NULL,
+    "title" "text" NOT NULL,
     "description" "text",
     "content" "text",
-    "category_id" "uuid",
-    "event_type" "text" DEFAULT 'offline'::"text",
-    "location" "text",
-    "address" "text",
-    "map_url" "text",
-    "start_date" timestamp with time zone NOT NULL,
-    "end_date" timestamp with time zone NOT NULL,
-    "registration_start" timestamp with time zone NOT NULL,
-    "registration_end" timestamp with time zone NOT NULL,
     "featured_image" "text",
     "banner_image" "text",
     "gallery" "jsonb" DEFAULT '[]'::"jsonb",
+    "category_id" "uuid",
+    "location_name" "text",
+    "location_address" "text",
+    "location_map_url" "text",
+    "location_lat" numeric(10,8),
+    "location_lng" numeric(11,8),
+    "start_date" timestamp with time zone NOT NULL,
+    "end_date" timestamp with time zone NOT NULL,
+    "registration_start" timestamp with time zone,
+    "registration_end" timestamp with time zone,
     "max_attendees" integer,
     "current_attendees" integer DEFAULT 0,
-    "status" "text" DEFAULT 'draft'::"text" NOT NULL,
+    "status" "text" DEFAULT 'draft'::"text",
+    "is_featured" boolean DEFAULT false,
     "meta_title" "text",
     "meta_description" "text",
-    "meta_keywords" "text"[],
-    "view_count" integer DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "og_image" "text",
+    "views_count" integer DEFAULT 0,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
     "created_by" "uuid",
     "updated_by" "uuid",
-    CONSTRAINT "events_event_type_check" CHECK (("event_type" = ANY (ARRAY['online'::"text", 'offline'::"text", 'hybrid'::"text"]))),
-    CONSTRAINT "events_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'published'::"text", 'cancelled'::"text", 'completed'::"text"]))),
-    CONSTRAINT "valid_dates" CHECK (("end_date" > "start_date")),
-    CONSTRAINT "valid_registration" CHECK (("registration_end" >= "registration_start"))
+    CONSTRAINT "events_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'published'::"text", 'cancelled'::"text", 'completed'::"text"])))
 );
 
 
 ALTER TABLE "public"."events" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."order_activities" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "order_id" "uuid" NOT NULL,
+    "activity_type" "text" NOT NULL,
+    "description" "text",
+    "metadata" "jsonb",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."order_activities" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."order_activities" IS 'Audit log for order status changes';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."orders" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "order_number" "text" NOT NULL,
-    "user_id" "uuid" NOT NULL,
-    "event_id" "uuid" NOT NULL,
-    "subtotal" numeric(10,2) NOT NULL,
-    "discount_amount" numeric(10,2) DEFAULT 0,
-    "total_amount" numeric(10,2) NOT NULL,
-    "currency" "text" DEFAULT 'VND'::"text",
-    "voucher_code" "text",
-    "voucher_id" "uuid",
-    "payment_method" "text",
-    "payment_status" "text" DEFAULT 'pending'::"text" NOT NULL,
-    "payment_id" "text",
-    "paid_at" timestamp with time zone,
+    "transaction_code" "text" NOT NULL,
+    "user_id" "uuid",
     "customer_name" "text" NOT NULL,
     "customer_email" "text" NOT NULL,
-    "customer_phone" "text",
-    "notes" "text",
+    "customer_phone" "text" NOT NULL,
+    "event_id" "uuid" NOT NULL,
+    "items" "jsonb" NOT NULL,
+    "subtotal" numeric(10,2) DEFAULT 0 NOT NULL,
+    "discount_amount" numeric(10,2) DEFAULT 0,
+    "final_amount" numeric(10,2) NOT NULL,
+    "payment_method" "text" DEFAULT 'vietqr'::"text",
+    "payment_status" "text" DEFAULT 'pending'::"text",
+    "payment_proof_url" "text",
+    "paid_at" timestamp with time zone,
+    "order_status" "text" DEFAULT 'pending'::"text",
+    "bank_account_name" "text",
+    "bank_account_number" "text",
+    "bank_name" "text",
+    "qr_code_url" "text",
     "admin_notes" "text",
-    "points_earned" integer DEFAULT 0,
-    "points_used" integer DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "cancelled_at" timestamp with time zone,
-    "refunded_at" timestamp with time zone,
-    CONSTRAINT "orders_payment_method_check" CHECK (("payment_method" = ANY (ARRAY['vnpay'::"text", 'momo'::"text", 'zalopay'::"text", 'bank_transfer'::"text", 'cash'::"text", 'points'::"text"]))),
-    CONSTRAINT "orders_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'paid'::"text", 'failed'::"text", 'refunded'::"text", 'cancelled'::"text"])))
+    "cancelled_reason" "text",
+    "confirmed_by" "uuid",
+    "confirmed_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "expires_at" timestamp with time zone,
+    "payment_qr_code" "text",
+    "payment_reference" "text",
+    "payment_bank_account" "text",
+    "payment_bank_name" "text",
+    "payment_expires_at" timestamp with time zone,
+    "admin_note" "text",
+    CONSTRAINT "orders_order_status_check" CHECK (("order_status" = ANY (ARRAY['pending'::"text", 'confirmed'::"text", 'cancelled'::"text", 'completed'::"text"]))),
+    CONSTRAINT "orders_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'paid'::"text", 'failed'::"text", 'refunded'::"text"])))
 );
 
 
 ALTER TABLE "public"."orders" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."orders" IS 'Customer orders with VietQR payment flow';
+
+
+
+COMMENT ON COLUMN "public"."orders"."transaction_code" IS 'Mã giao dịch gửi kèm VietQR (8 ký tự)';
+
+
+
+COMMENT ON COLUMN "public"."orders"."items" IS 'JSONB array of order items for quick access';
+
+
+
+COMMENT ON COLUMN "public"."orders"."expires_at" IS 'Order expires after 15 minutes if not paid';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payment_verifications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "order_id" "uuid" NOT NULL,
+    "verified_by" "uuid" NOT NULL,
+    "verification_method" "text",
+    "bank_transaction_id" "text",
+    "bank_transaction_amount" numeric(12,2),
+    "bank_transaction_date" timestamp with time zone,
+    "bank_account_number" "text",
+    "is_verified" boolean DEFAULT false,
+    "verification_note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payment_verifications_verification_method_check" CHECK (("verification_method" = ANY (ARRAY['manual'::"text", 'screenshot'::"text", 'bank_statement'::"text"])))
+);
+
+
+ALTER TABLE "public"."payment_verifications" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."permissions_catalog" (
@@ -836,27 +943,17 @@ CREATE TABLE IF NOT EXISTS "public"."ticket_types" (
     "event_id" "uuid" NOT NULL,
     "name" "text" NOT NULL,
     "description" "text",
-    "price" numeric(10,2) NOT NULL,
-    "original_price" numeric(10,2),
-    "currency" "text" DEFAULT 'VND'::"text",
+    "price" numeric(10,2) DEFAULT 0 NOT NULL,
     "quantity" integer NOT NULL,
-    "sold" integer DEFAULT 0,
-    "reserved" integer DEFAULT 0,
+    "sold_count" integer DEFAULT 0,
     "sale_start" timestamp with time zone,
     "sale_end" timestamp with time zone,
-    "max_per_order" integer DEFAULT 10,
-    "min_per_order" integer DEFAULT 1,
     "benefits" "jsonb" DEFAULT '[]'::"jsonb",
     "points_earned" integer DEFAULT 0,
-    "is_active" boolean DEFAULT true NOT NULL,
-    "display_order" integer DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "available_tickets" CHECK ((("sold" + "reserved") <= "quantity")),
-    CONSTRAINT "ticket_types_price_check" CHECK (("price" >= (0)::numeric)),
-    CONSTRAINT "ticket_types_quantity_check" CHECK (("quantity" >= 0)),
-    CONSTRAINT "ticket_types_reserved_check" CHECK (("reserved" >= 0)),
-    CONSTRAINT "ticket_types_sold_check" CHECK (("sold" >= 0))
+    "sort_order" integer DEFAULT 0,
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
 
@@ -865,28 +962,34 @@ ALTER TABLE "public"."ticket_types" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."tickets" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "ticket_code" "text" NOT NULL,
+    "ticket_number" "text" NOT NULL,
     "qr_code" "text" NOT NULL,
     "order_id" "uuid" NOT NULL,
     "event_id" "uuid" NOT NULL,
     "ticket_type_id" "uuid" NOT NULL,
-    "user_id" "uuid" NOT NULL,
     "holder_name" "text" NOT NULL,
     "holder_email" "text" NOT NULL,
-    "holder_phone" "text",
-    "status" "text" DEFAULT 'valid'::"text" NOT NULL,
+    "ticket_type_name" "text" NOT NULL,
+    "price" numeric(10,2) NOT NULL,
+    "status" "text" DEFAULT 'valid'::"text",
     "checked_in_at" timestamp with time zone,
     "checked_in_by" "uuid",
-    "check_in_location" "text",
-    "transferred_to" "uuid",
-    "transferred_at" timestamp with time zone,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "tickets_status_check" CHECK (("status" = ANY (ARRAY['valid'::"text", 'used'::"text", 'cancelled'::"text", 'transferred'::"text", 'expired'::"text"])))
+    "checked_in_notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "tickets_status_check" CHECK (("status" = ANY (ARRAY['valid'::"text", 'used'::"text", 'cancelled'::"text", 'expired'::"text"])))
 );
 
 
 ALTER TABLE "public"."tickets" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."tickets" IS 'Individual tickets with QR codes for check-in';
+
+
+
+COMMENT ON COLUMN "public"."tickets"."qr_code" IS 'QR code content for check-in scanning';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."user_vouchers" (
@@ -1000,6 +1103,11 @@ ALTER TABLE ONLY "public"."events"
 
 
 
+ALTER TABLE ONLY "public"."order_activities"
+    ADD CONSTRAINT "order_activities_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."orders"
     ADD CONSTRAINT "orders_order_number_key" UNIQUE ("order_number");
 
@@ -1007,6 +1115,16 @@ ALTER TABLE ONLY "public"."orders"
 
 ALTER TABLE ONLY "public"."orders"
     ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_transaction_code_key" UNIQUE ("transaction_code");
+
+
+
+ALTER TABLE ONLY "public"."payment_verifications"
+    ADD CONSTRAINT "payment_verifications_pkey" PRIMARY KEY ("id");
 
 
 
@@ -1091,7 +1209,7 @@ ALTER TABLE ONLY "public"."tickets"
 
 
 ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_ticket_code_key" UNIQUE ("ticket_code");
+    ADD CONSTRAINT "tickets_ticket_number_key" UNIQUE ("ticket_number");
 
 
 
@@ -1155,35 +1273,51 @@ CREATE INDEX "idx_checkin_logs_ticket" ON "public"."checkin_logs" USING "btree" 
 
 
 
-CREATE INDEX "idx_events_category" ON "public"."events" USING "btree" ("category_id");
+CREATE INDEX "idx_event_categories_active" ON "public"."event_categories" USING "btree" ("is_active") WHERE ("is_active" = true);
 
 
 
-CREATE INDEX "idx_events_dates" ON "public"."events" USING "btree" ("start_date", "end_date");
+CREATE INDEX "idx_event_categories_sort" ON "public"."event_categories" USING "btree" ("sort_order");
 
 
 
-CREATE INDEX "idx_events_slug" ON "public"."events" USING "btree" ("slug");
+CREATE INDEX "idx_order_activities_created_at" ON "public"."order_activities" USING "btree" ("created_at" DESC);
 
 
 
-CREATE INDEX "idx_events_status" ON "public"."events" USING "btree" ("status");
+CREATE INDEX "idx_order_activities_order_id" ON "public"."order_activities" USING "btree" ("order_id");
 
 
 
-CREATE INDEX "idx_orders_event" ON "public"."orders" USING "btree" ("event_id");
+CREATE INDEX "idx_orders_created_at" ON "public"."orders" USING "btree" ("created_at" DESC);
 
 
 
-CREATE INDEX "idx_orders_number" ON "public"."orders" USING "btree" ("order_number");
+CREATE INDEX "idx_orders_customer_email" ON "public"."orders" USING "btree" ("customer_email");
 
 
 
-CREATE INDEX "idx_orders_status" ON "public"."orders" USING "btree" ("payment_status");
+CREATE INDEX "idx_orders_event_id" ON "public"."orders" USING "btree" ("event_id");
 
 
 
-CREATE INDEX "idx_orders_user" ON "public"."orders" USING "btree" ("user_id");
+CREATE INDEX "idx_orders_order_number" ON "public"."orders" USING "btree" ("order_number");
+
+
+
+CREATE INDEX "idx_orders_order_status" ON "public"."orders" USING "btree" ("order_status");
+
+
+
+CREATE INDEX "idx_orders_payment_status" ON "public"."orders" USING "btree" ("payment_status");
+
+
+
+CREATE INDEX "idx_orders_transaction_code" ON "public"."orders" USING "btree" ("transaction_code");
+
+
+
+CREATE INDEX "idx_payment_verifications_order_id" ON "public"."payment_verifications" USING "btree" ("order_id");
 
 
 
@@ -1243,27 +1377,15 @@ CREATE INDEX "idx_roles_name" ON "public"."roles" USING "btree" ("name");
 
 
 
-CREATE INDEX "idx_ticket_types_active" ON "public"."ticket_types" USING "btree" ("is_active");
+CREATE INDEX "idx_tickets_event_id" ON "public"."tickets" USING "btree" ("event_id");
 
 
 
-CREATE INDEX "idx_ticket_types_event" ON "public"."ticket_types" USING "btree" ("event_id");
+CREATE INDEX "idx_tickets_order_id" ON "public"."tickets" USING "btree" ("order_id");
 
 
 
-CREATE INDEX "idx_tickets_code" ON "public"."tickets" USING "btree" ("ticket_code");
-
-
-
-CREATE INDEX "idx_tickets_event" ON "public"."tickets" USING "btree" ("event_id");
-
-
-
-CREATE INDEX "idx_tickets_order" ON "public"."tickets" USING "btree" ("order_id");
-
-
-
-CREATE INDEX "idx_tickets_qr" ON "public"."tickets" USING "btree" ("qr_code");
+CREATE INDEX "idx_tickets_qr_code" ON "public"."tickets" USING "btree" ("qr_code");
 
 
 
@@ -1271,7 +1393,7 @@ CREATE INDEX "idx_tickets_status" ON "public"."tickets" USING "btree" ("status")
 
 
 
-CREATE INDEX "idx_tickets_user" ON "public"."tickets" USING "btree" ("user_id");
+CREATE INDEX "idx_tickets_ticket_number" ON "public"."tickets" USING "btree" ("ticket_number");
 
 
 
@@ -1303,19 +1425,15 @@ CREATE OR REPLACE TRIGGER "auto_update_rank_trigger" BEFORE UPDATE OF "total_poi
 
 
 
-CREATE OR REPLACE TRIGGER "set_order_number" BEFORE INSERT ON "public"."orders" FOR EACH ROW WHEN (("new"."order_number" IS NULL)) EXECUTE FUNCTION "public"."generate_order_number"();
-
-
-
-CREATE OR REPLACE TRIGGER "set_ticket_code" BEFORE INSERT ON "public"."tickets" FOR EACH ROW WHEN (("new"."ticket_code" IS NULL)) EXECUTE FUNCTION "public"."generate_ticket_code"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_admin_users_updated_at" BEFORE UPDATE ON "public"."admin_users" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
-CREATE OR REPLACE TRIGGER "update_attendees_on_payment" AFTER INSERT OR UPDATE OF "payment_status" ON "public"."orders" FOR EACH ROW EXECUTE FUNCTION "public"."update_event_attendees"();
+CREATE OR REPLACE TRIGGER "update_event_categories_updated_at" BEFORE UPDATE ON "public"."event_categories" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_orders_updated_at" BEFORE UPDATE ON "public"."orders" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
@@ -1324,6 +1442,10 @@ CREATE OR REPLACE TRIGGER "update_profiles_updated_at" BEFORE UPDATE ON "public"
 
 
 CREATE OR REPLACE TRIGGER "update_roles_updated_at" BEFORE UPDATE ON "public"."roles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_tickets_updated_at" BEFORE UPDATE ON "public"."tickets" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
@@ -1357,47 +1479,57 @@ ALTER TABLE ONLY "public"."blog_posts"
 
 
 ALTER TABLE ONLY "public"."checkin_logs"
-    ADD CONSTRAINT "checkin_logs_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id");
-
-
-
-ALTER TABLE ONLY "public"."checkin_logs"
     ADD CONSTRAINT "checkin_logs_scanned_by_fkey" FOREIGN KEY ("scanned_by") REFERENCES "auth"."users"("id");
 
 
 
-ALTER TABLE ONLY "public"."checkin_logs"
-    ADD CONSTRAINT "checkin_logs_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "public"."tickets"("id");
+ALTER TABLE ONLY "public"."events"
+    ADD CONSTRAINT "events_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "public"."event_categories"("id") ON DELETE SET NULL;
 
 
 
 ALTER TABLE ONLY "public"."events"
-    ADD CONSTRAINT "events_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "public"."event_categories"("id");
+    ADD CONSTRAINT "events_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
 ALTER TABLE ONLY "public"."events"
-    ADD CONSTRAINT "events_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id");
+    ADD CONSTRAINT "events_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
-ALTER TABLE ONLY "public"."events"
-    ADD CONSTRAINT "events_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id");
+ALTER TABLE ONLY "public"."order_activities"
+    ADD CONSTRAINT "order_activities_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id");
-
-
-
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."order_activities"
+    ADD CONSTRAINT "order_activities_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE CASCADE;
 
 
 
 ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_voucher_id_fkey" FOREIGN KEY ("voucher_id") REFERENCES "public"."vouchers"("id");
+    ADD CONSTRAINT "orders_confirmed_by_fkey" FOREIGN KEY ("confirmed_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payment_verifications"
+    ADD CONSTRAINT "payment_verifications_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."payment_verifications"
+    ADD CONSTRAINT "payment_verifications_verified_by_fkey" FOREIGN KEY ("verified_by") REFERENCES "auth"."users"("id");
 
 
 
@@ -1462,12 +1594,12 @@ ALTER TABLE ONLY "public"."ticket_types"
 
 
 ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_checked_in_by_fkey" FOREIGN KEY ("checked_in_by") REFERENCES "auth"."users"("id");
+    ADD CONSTRAINT "tickets_checked_in_by_fkey" FOREIGN KEY ("checked_in_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
 ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id");
+    ADD CONSTRAINT "tickets_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE CASCADE;
 
 
 
@@ -1477,17 +1609,7 @@ ALTER TABLE ONLY "public"."tickets"
 
 
 ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_ticket_type_id_fkey" FOREIGN KEY ("ticket_type_id") REFERENCES "public"."ticket_types"("id");
-
-
-
-ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_transferred_to_fkey" FOREIGN KEY ("transferred_to") REFERENCES "public"."profiles"("id");
-
-
-
-ALTER TABLE ONLY "public"."tickets"
-    ADD CONSTRAINT "tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id");
+    ADD CONSTRAINT "tickets_ticket_type_id_fkey" FOREIGN KEY ("ticket_type_id") REFERENCES "public"."ticket_types"("id") ON DELETE RESTRICT;
 
 
 
@@ -1515,6 +1637,28 @@ CREATE POLICY "Admin can view own info" ON "public"."admin_users" FOR SELECT USI
 
 
 
+CREATE POLICY "Admins full access to categories" ON "public"."event_categories" USING ((EXISTS ( SELECT 1
+   FROM "public"."admin_users"
+  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true)))));
+
+
+
+CREATE POLICY "Admins full access to orders" ON "public"."orders" USING ((EXISTS ( SELECT 1
+   FROM "public"."admin_users"
+  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true)))));
+
+
+
+CREATE POLICY "Admins full access to tickets" ON "public"."tickets" USING ((EXISTS ( SELECT 1
+   FROM "public"."admin_users"
+  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true)))));
+
+
+
+CREATE POLICY "Anyone can create orders" ON "public"."orders" FOR INSERT WITH CHECK (true);
+
+
+
 CREATE POLICY "Anyone can view active roles" ON "public"."roles" FOR SELECT USING (("is_active" = true));
 
 
@@ -1523,7 +1667,7 @@ CREATE POLICY "Anyone can view active vouchers" ON "public"."vouchers" FOR SELEC
 
 
 
-CREATE POLICY "Anyone can view published events" ON "public"."events" FOR SELECT USING (("status" = 'published'::"text"));
+CREATE POLICY "Anyone can view by order number" ON "public"."orders" FOR SELECT USING (true);
 
 
 
@@ -1532,6 +1676,10 @@ CREATE POLICY "Anyone can view published posts" ON "public"."blog_posts" FOR SEL
 
 
 CREATE POLICY "Anyone can view ranks" ON "public"."ranks" FOR SELECT USING (("is_active" = true));
+
+
+
+CREATE POLICY "Public can view active categories" ON "public"."event_categories" FOR SELECT USING (("is_active" = true));
 
 
 
@@ -1551,7 +1699,19 @@ CREATE POLICY "Users can update own profile" ON "public"."profiles" FOR UPDATE U
 
 
 
-CREATE POLICY "Users can view own orders" ON "public"."orders" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "Users can view own order activities" ON "public"."order_activities" FOR SELECT USING (((EXISTS ( SELECT 1
+   FROM "public"."orders"
+  WHERE (("orders"."id" = "order_activities"."order_id") AND (("orders"."user_id" = "auth"."uid"()) OR ("orders"."customer_email" = (( SELECT "users"."email"
+           FROM "auth"."users"
+          WHERE ("users"."id" = "auth"."uid"())))::"text"))))) OR (EXISTS ( SELECT 1
+   FROM "public"."admin_users"
+  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true))))));
+
+
+
+CREATE POLICY "Users can view own orders" ON "public"."orders" FOR SELECT USING ((("user_id" = "auth"."uid"()) OR ("customer_email" = (( SELECT "users"."email"
+   FROM "auth"."users"
+  WHERE ("users"."id" = "auth"."uid"())))::"text")));
 
 
 
@@ -1563,7 +1723,11 @@ CREATE POLICY "Users can view own rank history" ON "public"."rank_history" FOR S
 
 
 
-CREATE POLICY "Users can view own tickets" ON "public"."tickets" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "Users can view own tickets" ON "public"."tickets" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."orders"
+  WHERE (("orders"."id" = "tickets"."order_id") AND (("orders"."user_id" = "auth"."uid"()) OR ("orders"."customer_email" = (( SELECT "users"."email"
+           FROM "auth"."users"
+          WHERE ("users"."id" = "auth"."uid"())))::"text"))))));
 
 
 
@@ -1581,7 +1745,10 @@ ALTER TABLE "public"."admin_users" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."blog_posts" ENABLE ROW LEVEL SECURITY;
 
 
-ALTER TABLE "public"."events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."event_categories" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."order_activities" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
@@ -1797,6 +1964,18 @@ GRANT ALL ON FUNCTION "public"."generate_ticket_code"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."generate_ticket_number"() TO "anon";
+GRANT ALL ON FUNCTION "public"."generate_ticket_number"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."generate_ticket_number"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."generate_transaction_code"() TO "anon";
+GRANT ALL ON FUNCTION "public"."generate_transaction_code"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."generate_transaction_code"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."get_user_permissions"("p_user_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_user_permissions"("p_user_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_user_permissions"("p_user_id" "uuid") TO "service_role";
@@ -1908,9 +2087,21 @@ GRANT ALL ON TABLE "public"."events" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."order_activities" TO "anon";
+GRANT ALL ON TABLE "public"."order_activities" TO "authenticated";
+GRANT ALL ON TABLE "public"."order_activities" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."orders" TO "anon";
 GRANT ALL ON TABLE "public"."orders" TO "authenticated";
 GRANT ALL ON TABLE "public"."orders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payment_verifications" TO "anon";
+GRANT ALL ON TABLE "public"."payment_verifications" TO "authenticated";
+GRANT ALL ON TABLE "public"."payment_verifications" TO "service_role";
 
 
 
