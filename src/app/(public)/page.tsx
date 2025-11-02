@@ -1,31 +1,33 @@
+// src/app/(public)/home/page.tsx
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { Header } from '@/components/layout/public-header'
+// Component 'PublicHeader' đã có trong layout client rồi
+// nên chúng ta không cần import lại ở đây.
 
-export default async function Home() {
+export default async function HomePage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Nếu chưa login thì redirect về login page
-  if (!user) {
-    redirect('/login')
+  let profile = null
+  if (user) {
+    // Fetch profile
+    const { data } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        rank:ranks!profiles_rank_id_fkey(*)
+      `)
+      .eq('id', user.id)
+      .single()
+    profile = data
   }
 
-  // Fetch profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(`
-      *,
-      rank:ranks!profiles_rank_id_fkey(*)
-    `)
-    .eq('id', user.id)
-    .single()
-
   return (
-    <div className="min-h-screen bg-background">
-      <Header user={user} profile={profile} />
-      
-      <main className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
+      {user && profile ? (
+        // ===================================
+        // NỘI DUNG KHI ĐÃ ĐĂNG NHẬP
+        // (Đây là code từ file page.tsx cũ của bạn)
+        // ===================================
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl font-bold mb-4">
             Chào mừng trở lại, {user.user_metadata.full_name || user.email}! 👋
@@ -44,7 +46,7 @@ export default async function Home() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Hạng thành viên:</span>
-                  <span className="font-bold" style={{ color: profile?.rank?.color }}>
+                  <span className="font-bold" style={{ color: profile?.rank?.color || 'inherit' }}>
                     {profile?.rank?.display_name || 'Chưa có'}
                   </span>
                 </div>
@@ -83,7 +85,35 @@ export default async function Home() {
             </div>
           </div>
         </div>
-      </main>
+      ) : (
+        // ===================================
+        // NỘI DUNG KHI CHƯA ĐĂNG NHẬP
+        // (Đây là nội dung trang chủ công khai,
+        // chúng ta sẽ xây dựng sau)
+        // ===================================
+        <div className="max-w-4xl mx-auto text-center py-20">
+          <h1 className="text-5xl font-bold mb-6">
+            Chào mừng đến với Orochi
+          </h1>
+          <p className="text-xl text-muted-foreground mb-10">
+            Nền tảng sự kiện và cộng đồng hàng đầu.
+          </p>
+          <div className="flex justify-center gap-4">
+            <a
+              href="/events"
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90"
+            >
+              Khám phá Sự kiện
+            </a>
+            <a
+              href="/login"
+              className="px-6 py-3 bg-secondary text-secondary-foreground rounded-lg font-semibold hover:bg-secondary/80"
+            >
+              Đăng nhập
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

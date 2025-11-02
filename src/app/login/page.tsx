@@ -11,7 +11,7 @@ export default async function LoginPage() {
 
   // Nếu đã login thì redirect về home
   if (user) {
-    redirect('/')
+    redirect('/home')
   }
 
   return (

@@ -16,7 +16,7 @@ type Profile = {
 
 type AvatarWithRankProps = {
   user: User
-  profile?: Profile
+  profile?: Profile | null
   size?: 'sm' | 'md' | 'lg' | 'xl'
   showBadge?: boolean
 }
