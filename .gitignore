@@ -34,7 +34,6 @@ yarn-error.log*
 .env*
 .md
 nul
-data.sql
 
 # vercel
 .vercel
