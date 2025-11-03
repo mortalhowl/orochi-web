@@ -244,8 +244,14 @@ export async function confirmOrderPayment(
     const tickets: any[] = []
     const orderItems = order.items as CheckoutItem[]
 
+    console.log(`Creating tickets for ${orderItems.length} items:`, orderItems)
+
     for (const item of orderItems) {
+      console.log(`Processing item: ${item.ticketTypeName}, quantity: ${item.quantity}`)
+
       for (let i = 0; i < item.quantity; i++) {
+        console.log(`Creating ticket ${i + 1}/${item.quantity} for ${item.ticketTypeName}`)
+
         const { data: ticket, error: ticketError } = await supabase
           .from('tickets')
           .insert({
@@ -263,9 +269,11 @@ export async function confirmOrderPayment(
           .single()
 
         if (ticketError || !ticket) {
-          console.error('Error creating ticket:', ticketError)
+          console.error(`Error creating ticket ${i + 1}:`, ticketError)
           continue
         }
+
+        console.log(`Ticket created: ${ticket.ticket_number}`)
 
         // Tạo QR code cho ticket (sử dụng ticket_number)
         // Convert to buffer instead of data URL
@@ -277,7 +285,7 @@ export async function confirmOrderPayment(
 
         // Upload QR code to Supabase Storage
         const qrFileName = `${ticket.ticket_number}.png`
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('ticket-qr-codes')
           .upload(qrFileName, qrCodeBuffer, {
             contentType: 'image/png',
@@ -286,14 +294,16 @@ export async function confirmOrderPayment(
           })
 
         if (uploadError) {
-          console.error('Error uploading QR code:', uploadError)
-          continue
+          console.error(`Error uploading QR code for ${ticket.ticket_number}:`, uploadError)
+          // Don't skip - still add ticket with empty QR, can regenerate later
         }
 
         // Get public URL
         const {
           data: { publicUrl },
         } = supabase.storage.from('ticket-qr-codes').getPublicUrl(qrFileName)
+
+        console.log(`QR code URL: ${publicUrl}`)
 
         // Cập nhật QR code URL vào ticket
         await supabase
@@ -309,6 +319,8 @@ export async function confirmOrderPayment(
         })
       }
     }
+
+    console.log(`Total tickets created: ${tickets.length}`, tickets.map(t => t.ticket_number))
 
     // 5. Cộng điểm cho user (nếu có)
     // Chỉ insert vào point_transactions, trigger sẽ tự động update profiles

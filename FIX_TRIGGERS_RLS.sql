@@ -120,7 +120,7 @@ CREATE TRIGGER auto_update_rank_trigger
 -- 4. Fix các functions generate code
 -- ============================================
 
--- generate_ticket_number
+-- generate_ticket_number with secure hash
 CREATE OR REPLACE FUNCTION public.generate_ticket_number()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -128,18 +128,30 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  date_part TEXT;
-  sequence_part INT;
+  timestamp_part BIGINT;
+  random_part TEXT;
+  hash_part TEXT;
   new_number TEXT;
+  is_unique BOOLEAN := FALSE;
 BEGIN
-  date_part := TO_CHAR(NOW(), 'YYYYMMDD');
+  WHILE NOT is_unique LOOP
+    -- Use timestamp in microseconds
+    timestamp_part := EXTRACT(EPOCH FROM NOW())::BIGINT * 1000000;
 
-  SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 13) AS INT)), 0) + 1
-  INTO sequence_part
-  FROM tickets
-  WHERE ticket_number LIKE 'TICKET-' || date_part || '%';
+    -- Generate random string (6 chars)
+    random_part := UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 6));
 
-  new_number := 'TICKET-' || date_part || '-' || LPAD(sequence_part::TEXT, 5, '0');
+    -- Generate hash from timestamp + random (8 chars)
+    hash_part := UPPER(SUBSTRING(MD5(timestamp_part::TEXT || random_part) FROM 1 FOR 8));
+
+    -- Format: TK-HASH-RANDOM (e.g., TK-A3F8B9C2-X7Y4Z1)
+    new_number := 'TK-' || hash_part || '-' || random_part;
+
+    -- Check uniqueness
+    SELECT NOT EXISTS(
+      SELECT 1 FROM tickets WHERE ticket_number = new_number
+    ) INTO is_unique;
+  END LOOP;
 
   RETURN new_number;
 END;

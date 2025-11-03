@@ -22,53 +22,87 @@ export function EventForm({ event, categories, mode }: EventFormProps) {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'basic' | 'content' | 'media' | 'location' | 'tickets' | 'seo'>('basic')
 
+  // Helper: Convert UTC ISO string to local datetime-local format
+  const toLocalDatetime = (isoString?: string) => {
+    if (!isoString) return ''
+    // Remove 'Z' and milliseconds to get format: YYYY-MM-DDTHH:mm
+    const date = new Date(isoString)
+    const offset = date.getTimezoneOffset() * 60000
+    const localDate = new Date(date.getTime() - offset)
+    return localDate.toISOString().slice(0, 16)
+  }
+
+  // Helper: Auto-generate meta if empty
+  const generateMeta = (title: string, description?: string) => {
+    return {
+      meta_title: title.slice(0, 60), // SEO best practice: 50-60 chars
+      meta_description: description?.slice(0, 160) || title.slice(0, 160), // 150-160 chars
+    }
+  }
+
   // Form state
-  const [formData, setFormData] = useState<CreateEventInput>({
-    title: event?.title || '',
-    slug: event?.slug || '',
-    description: event?.description || '',
-    content: event?.content || '',
-    featured_image: event?.featured_image || undefined,
-    banner_image: event?.banner_image || undefined,
-    gallery: event?.gallery || [],
-    category_id: event?.category_id || undefined,
-    location_name: event?.location_name || undefined,
-    location_address: event?.location_address || undefined,
-    location_map_url: event?.location_map_url || undefined,
-    start_date: event?.start_date || '',
-    end_date: event?.end_date || '',
-    registration_start: event?.registration_start || undefined,
-    registration_end: event?.registration_end || undefined,
-    max_attendees: event?.max_attendees || undefined,
-    status: event?.status || 'draft',
-    is_featured: event?.is_featured || false,
-    meta_title: event?.meta_title || undefined,
-    meta_description: event?.meta_description || undefined,
-    // Load ticket_types from event in edit mode
-    ticket_types: event?.ticket_types?.map((tt) => ({
-      name: tt.name,
-      description: tt.description || undefined,
-      price: tt.price,
-      quantity: tt.quantity,
-      sale_start: tt.sale_start || undefined,
-      sale_end: tt.sale_end || undefined,
-      benefits: tt.benefits || [],
-      points_earned: tt.points_earned,
-      sort_order: tt.sort_order,
-      is_active: tt.is_active,
-    })) || [],
+  const [formData, setFormData] = useState<CreateEventInput>(() => {
+    const meta = event?.meta_title && event?.meta_description
+      ? { meta_title: event.meta_title, meta_description: event.meta_description }
+      : generateMeta(event?.title || '', event?.description)
+
+    return {
+      title: event?.title || '',
+      slug: event?.slug || '',
+      description: event?.description || '',
+      content: event?.content || '',
+      featured_image: event?.featured_image || undefined,
+      banner_image: event?.banner_image || undefined,
+      gallery: event?.gallery || [],
+      category_id: event?.category_id || undefined,
+      location_name: event?.location_name || undefined,
+      location_address: event?.location_address || undefined,
+      location_map_url: event?.location_map_url || undefined,
+      start_date: toLocalDatetime(event?.start_date),
+      end_date: toLocalDatetime(event?.end_date),
+      registration_start: toLocalDatetime(event?.registration_start),
+      registration_end: toLocalDatetime(event?.registration_end),
+      max_attendees: event?.max_attendees || undefined,
+      status: event?.status || 'draft',
+      is_featured: event?.is_featured || false,
+      meta_title: meta.meta_title,
+      meta_description: meta.meta_description,
+      // Load ticket_types from event in edit mode
+      ticket_types: event?.ticket_types?.map((tt) => ({
+        name: tt.name,
+        description: tt.description || undefined,
+        price: tt.price,
+        quantity: tt.quantity,
+        sale_start: tt.sale_start || undefined,
+        sale_end: tt.sale_end || undefined,
+        benefits: tt.benefits || [],
+        points_earned: tt.points_earned,
+        sort_order: tt.sort_order,
+        is_active: tt.is_active,
+      })) || [],
+    }
   })
 
   const [isGeneratingSlug, setIsGeneratingSlug] = useState(false)
 
   const handleTitleChange = (title: string) => {
-    setFormData(prev => ({ ...prev, title }))
-    
-    // Auto-generate slug only in create mode
-    if (mode === 'create' && !formData.slug) {
-      const autoSlug = generateSlug(title)
-      setFormData(prev => ({ ...prev, slug: autoSlug }))
-    }
+    setFormData(prev => {
+      const updates: any = { title }
+
+      // Auto-generate slug only in create mode
+      if (mode === 'create' && !prev.slug) {
+        updates.slug = generateSlug(title)
+      }
+
+      // Auto-generate meta if empty or in create mode
+      if (mode === 'create' || !prev.meta_title) {
+        const meta = generateMeta(title, prev.description)
+        updates.meta_title = meta.meta_title
+        updates.meta_description = meta.meta_description
+      }
+
+      return { ...prev, ...updates }
+    })
   }
 
   const handleGenerateSlug = async () => {
@@ -86,6 +120,12 @@ export function EventForm({ event, categories, mode }: EventFormProps) {
     } finally {
       setIsGeneratingSlug(false)
     }
+  }
+
+  // Helper: Convert local datetime to UTC ISO string
+  const toUTCISOString = (localDatetime: string) => {
+    if (!localDatetime) return undefined
+    return new Date(localDatetime).toISOString()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -120,11 +160,20 @@ export function EventForm({ event, categories, mode }: EventFormProps) {
 
     startTransition(async () => {
       try {
+        // Convert local datetime to UTC before sending to server
+        const dataToSubmit = {
+          ...formData,
+          start_date: toUTCISOString(formData.start_date)!,
+          end_date: toUTCISOString(formData.end_date)!,
+          registration_start: toUTCISOString(formData.registration_start || ''),
+          registration_end: toUTCISOString(formData.registration_end || ''),
+        }
+
         if (mode === 'create') {
-          const newEvent = await createEvent(formData)
+          const newEvent = await createEvent(dataToSubmit)
           router.push(`/admin/events/${newEvent.id}`)
         } else {
-          await updateEvent({ id: event!.id, ...formData })
+          await updateEvent({ id: event!.id, ...dataToSubmit })
           router.push(`/admin/events/${event!.id}`)
         }
         router.refresh()
