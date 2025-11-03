@@ -43,8 +43,14 @@ export function TicketSelector({ event }: TicketSelectorProps) {
   const totalTickets = getTotalTickets()
 
   const handleCheckout = () => {
-    // TODO: Implement checkout flow in next phase
-    alert('Chức năng thanh toán đang được phát triển!')
+    // Build query params with selected tickets
+    const params = new URLSearchParams()
+    Object.entries(selectedTickets).forEach(([ticketId, quantity]) => {
+      params.append(`ticket_${ticketId}`, quantity.toString())
+    })
+
+    // Navigate to checkout page
+    window.location.href = `/checkout?event=${event.slug}&${params.toString()}`
   }
 
   return (

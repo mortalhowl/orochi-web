@@ -144,19 +144,19 @@ CREATE OR REPLACE FUNCTION "public"."generate_order_number"() RETURNS "text"
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-  new_number TEXT;
   date_part TEXT;
   sequence_part INT;
+  new_number TEXT;
 BEGIN
   date_part := TO_CHAR(NOW(), 'YYYYMMDD');
-  
+
   SELECT COALESCE(MAX(CAST(SUBSTRING(order_number FROM 13) AS INT)), 0) + 1
   INTO sequence_part
   FROM orders
   WHERE order_number LIKE 'ORD-' || date_part || '%';
-  
+
   new_number := 'ORD-' || date_part || '-' || LPAD(sequence_part::TEXT, 3, '0');
-  
+
   RETURN new_number;
 END;
 $$;
@@ -430,6 +430,20 @@ $$;
 ALTER FUNCTION "public"."has_permission"("p_user_id" "uuid", "p_permission" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."increment_ticket_sold_count"("ticket_type_id" "uuid", "increment_by" integer DEFAULT 1) RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  UPDATE ticket_types
+  SET sold_count = sold_count + increment_by
+  WHERE id = ticket_type_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."increment_ticket_sold_count"("ticket_type_id" "uuid", "increment_by" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_admin"("p_user_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -521,6 +535,36 @@ $$;
 ALTER FUNCTION "public"."reset_user_points"("p_user_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_order_number"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  IF NEW.order_number IS NULL THEN
+    NEW.order_number := generate_order_number();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."set_order_number"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_transaction_code"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  IF NEW.transaction_code IS NULL THEN
+    NEW.transaction_code := generate_transaction_code();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."set_transaction_code"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_event_attendees"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -539,6 +583,35 @@ $$;
 
 
 ALTER FUNCTION "public"."update_event_attendees"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."update_profile_points_on_transaction"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  -- Update profile points
+  UPDATE profiles
+  SET 
+    current_points = current_points + NEW.points,
+    total_points = total_points + NEW.points,
+    lifetime_points = CASE 
+      WHEN NEW.points > 0 THEN lifetime_points + NEW.points
+      ELSE lifetime_points
+    END,
+    updated_at = NOW()
+  WHERE id = NEW.user_id;
+  
+  -- Update balance_after in the transaction
+  UPDATE point_transactions
+  SET balance_after = (SELECT current_points FROM profiles WHERE id = NEW.user_id)
+  WHERE id = NEW.id;
+  
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_profile_points_on_transaction"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
@@ -1425,6 +1498,18 @@ CREATE OR REPLACE TRIGGER "auto_update_rank_trigger" BEFORE UPDATE OF "total_poi
 
 
 
+CREATE OR REPLACE TRIGGER "set_order_number_trigger" BEFORE INSERT ON "public"."orders" FOR EACH ROW EXECUTE FUNCTION "public"."set_order_number"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_transaction_code_trigger" BEFORE INSERT ON "public"."orders" FOR EACH ROW EXECUTE FUNCTION "public"."set_transaction_code"();
+
+
+
+CREATE OR REPLACE TRIGGER "trigger_update_profile_points" AFTER INSERT ON "public"."point_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_profile_points_on_transaction"();
+
+
+
 CREATE OR REPLACE TRIGGER "update_admin_users_updated_at" BEFORE UPDATE ON "public"."admin_users" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
@@ -1751,12 +1836,6 @@ ALTER TABLE "public"."event_categories" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."order_activities" ENABLE ROW LEVEL SECURITY;
 
 
-ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."point_transactions" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2006,6 +2085,12 @@ GRANT ALL ON FUNCTION "public"."has_permission"("p_user_id" "uuid", "p_permissio
 
 
 
+GRANT ALL ON FUNCTION "public"."increment_ticket_sold_count"("ticket_type_id" "uuid", "increment_by" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."increment_ticket_sold_count"("ticket_type_id" "uuid", "increment_by" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."increment_ticket_sold_count"("ticket_type_id" "uuid", "increment_by" integer) TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."is_admin"("p_user_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."is_admin"("p_user_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_admin"("p_user_id" "uuid") TO "service_role";
@@ -2024,9 +2109,27 @@ GRANT ALL ON FUNCTION "public"."reset_user_points"("p_user_id" "uuid") TO "servi
 
 
 
+GRANT ALL ON FUNCTION "public"."set_order_number"() TO "anon";
+GRANT ALL ON FUNCTION "public"."set_order_number"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_order_number"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "anon";
+GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."update_event_attendees"() TO "anon";
 GRANT ALL ON FUNCTION "public"."update_event_attendees"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_event_attendees"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_profile_points_on_transaction"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_profile_points_on_transaction"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_profile_points_on_transaction"() TO "service_role";
 
 
 
