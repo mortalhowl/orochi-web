@@ -1,44 +1,43 @@
-// src/components/admin/events-filters.tsx
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { Filter } from 'lucide-react'
-import type { EventCategory } from '@/types/events.types'
 
-type EventsFiltersProps = {
-  categories: EventCategory[]
+type TicketFiltersProps = {
+  events: Array<{ id: string; title: string }>
 }
 
-export function EventsFilters({ categories }: EventsFiltersProps) {
+export function TicketFilters({ events }: TicketFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
 
   const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [eventId, setEventId] = useState(searchParams.get('event') || '')
   const [status, setStatus] = useState(searchParams.get('status') || '')
-  const [category, setCategory] = useState(searchParams.get('category') || '')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
     const params = new URLSearchParams()
     if (search) params.set('search', search)
+    if (eventId) params.set('event', eventId)
     if (status) params.set('status', status)
-    if (category) params.set('category', category)
 
     startTransition(() => {
-      router.replace(`/admin/events?${params.toString()}`, { scroll: false })
+      // Use replace to avoid adding to history and prevent layout re-render
+      router.replace(`/admin/tickets?${params.toString()}`, { scroll: false })
     })
   }
 
   const handleReset = () => {
     setSearch('')
+    setEventId('')
     setStatus('')
-    setCategory('')
 
     startTransition(() => {
-      router.replace('/admin/events', { scroll: false })
+      router.replace('/admin/tickets', { scroll: false })
     })
   }
 
@@ -57,9 +56,26 @@ export function EventsFilters({ categories }: EventsFiltersProps) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tên sự kiện..."
+            placeholder="Mã vé, tên, email..."
             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
+        </div>
+
+        {/* Event Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Sự kiện</label>
+          <select
+            value={eventId}
+            onChange={(e) => setEventId(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Tất cả sự kiện</option>
+            {events?.map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.title}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Status Filter */}
@@ -70,28 +86,10 @@ export function EventsFilters({ categories }: EventsFiltersProps) {
             onChange={(e) => setStatus(e.target.value)}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="">Tất cả trạng thái</option>
-            <option value="draft">Nháp</option>
-            <option value="published">Đã xuất bản</option>
-            <option value="completed">Đã kết thúc</option>
+            <option value="">Tất cả</option>
+            <option value="active">Chưa dùng</option>
+            <option value="used">Đã check-in</option>
             <option value="cancelled">Đã hủy</option>
-          </select>
-        </div>
-
-        {/* Category Filter */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Tất cả danh mục</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
           </select>
         </div>
 
@@ -104,7 +102,7 @@ export function EventsFilters({ categories }: EventsFiltersProps) {
           >
             {isPending ? 'Đang lọc...' : 'Lọc'}
           </button>
-          {(search || status || category) && (
+          {(search || eventId || status) && (
             <button
               type="button"
               onClick={handleReset}

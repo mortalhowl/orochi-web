@@ -1,0 +1,21 @@
+[33m088f5bb[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: checkout: moving from 1748f09cdcc8405b80b08dccb9d1f499b6a35253 to 088f5bb18f9fe939321d0be8b57413e9654062f7
+[33m1748f09[m HEAD@{1}: checkout: moving from f1f5cd84496f0b5b5cdd9216427923a653290594 to 1748f09cdcc8405b80b08dccb9d1f499b6a35253
+[33mf1f5cd8[m HEAD@{2}: checkout: moving from main to f1f5cd84496f0b5b5cdd9216427923a653290594
+[33md5da468[m[33m ([m[1;32mmain[m[33m)[m HEAD@{3}: commit: Fix
+[33mb141d96[m HEAD@{4}: commit: add checkin
+[33m79a9419[m HEAD@{5}: commit: fix
+[33mf1f5cd8[m HEAD@{6}: commit: remove data.sql
+[33m424855a[m HEAD@{7}: commit: cancelled push data.sql
+[33m1748f09[m HEAD@{8}: commit: Add something
+[33m088f5bb[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{9}: commit: Add new schema
+[33m3335e7d[m HEAD@{10}: commit: Fix public layout
+[33m6e7e3be[m HEAD@{11}: commit: Add events page
+[33m46adb7f[m HEAD@{12}: commit: Fix loop login page and dashboard page
+[33mc7717bb[m HEAD@{13}: commit: Add dashboard data test
+[33m32b81bc[m HEAD@{14}: commit: Add roles
+[33mc11858b[m HEAD@{15}: commit: Change struct
+[33m6b8ae8b[m HEAD@{16}: reset: moving to origin/main
+[33m6b8ae8b[m HEAD@{17}: reset: moving to origin/main
+[33m6b8ae8b[m HEAD@{18}: Branch: renamed refs/heads/master to refs/heads/main
+[33m6b8ae8b[m HEAD@{20}: commit: first commit
+[33mf2c7e73[m HEAD@{21}: commit (initial): Initial commit from Create Next App

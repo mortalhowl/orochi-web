@@ -3,7 +3,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 type MenuItem = {
   id: string
@@ -25,6 +25,12 @@ type AdminSidebarProps = {
 export function AdminSidebar({ isOpen, onToggle, isMobile, adminUser }: AdminSidebarProps) {
   const pathname = usePathname()
   const [expandedMenus, setExpandedMenus] = useState<string[]>(['events'])
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Handle client-side mounting
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const menuItems: MenuItem[] = [
     {
@@ -243,8 +249,8 @@ export function AdminSidebar({ isOpen, onToggle, isMobile, adminUser }: AdminSid
     )
   }
 
-  // Don't render desktop sidebar on mobile
-  if (!isMobile && typeof window !== 'undefined' && window.innerWidth < 1024) {
+  // Don't render until mounted (prevent hydration mismatch)
+  if (!isMounted) {
     return null
   }
 

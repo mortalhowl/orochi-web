@@ -98,8 +98,9 @@ export async function checkInTicket(
 
     // 3. Check event dates
     const now = new Date()
-    const eventStart = new Date(ticket.event.start_date)
-    const eventEnd = new Date(ticket.event.end_date)
+    const ticketData = ticket as any
+    const eventStart = new Date(ticketData.event.start_date)
+    const eventEnd = new Date(ticketData.event.end_date)
 
     // Allow check-in 2 hours before event
     const checkInWindowStart = new Date(eventStart.getTime() - 2 * 60 * 60 * 1000)
@@ -144,8 +145,8 @@ export async function checkInTicket(
 
     // 5. Log check-in activity
     await supabase.from('checkin_logs').insert({
-      ticket_id: ticket.id,
-      event_id: ticket.event.id,
+      ticket_id: ticketData.id,
+      event_id: ticketData.event.id,
       checked_in_by: adminUserId,
       checked_in_at: new Date().toISOString(),
       notes: notes || null,

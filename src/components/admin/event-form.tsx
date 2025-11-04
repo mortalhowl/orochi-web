@@ -44,7 +44,7 @@ export function EventForm({ event, categories, mode }: EventFormProps) {
   const [formData, setFormData] = useState<CreateEventInput>(() => {
     const meta = event?.meta_title && event?.meta_description
       ? { meta_title: event.meta_title, meta_description: event.meta_description }
-      : generateMeta(event?.title || '', event?.description)
+      : generateMeta(event?.title || '', event?.description || undefined)
 
     return {
       title: event?.title || '',
@@ -60,8 +60,8 @@ export function EventForm({ event, categories, mode }: EventFormProps) {
       location_map_url: event?.location_map_url || undefined,
       start_date: toLocalDatetime(event?.start_date),
       end_date: toLocalDatetime(event?.end_date),
-      registration_start: toLocalDatetime(event?.registration_start),
-      registration_end: toLocalDatetime(event?.registration_end),
+      registration_start: toLocalDatetime(event?.registration_start || undefined),
+      registration_end: toLocalDatetime(event?.registration_end || undefined),
       max_attendees: event?.max_attendees || undefined,
       status: event?.status || 'draft',
       is_featured: event?.is_featured || false,

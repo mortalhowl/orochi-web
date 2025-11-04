@@ -106,32 +106,32 @@ ALTER FUNCTION "public"."add_test_points"("p_user_id" "uuid", "p_points" integer
 
 
 CREATE OR REPLACE FUNCTION "public"."auto_update_user_rank"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   new_rank_id UUID;
   old_rank_id UUID;
 BEGIN
-  old_rank_id := NEW.rank_id;
-  
-  -- Tìm rank phù hợp với số điểm hiện tại
+  old_rank_id := OLD.rank_id;
+
+  -- Find appropriate rank based on total_points
   SELECT id INTO new_rank_id
-  FROM public.ranks
-  WHERE NEW.total_points >= min_points
-    AND (max_points IS NULL OR NEW.total_points <= max_points)
-    AND is_active = TRUE
-  ORDER BY level DESC
+  FROM ranks
+  WHERE is_active = true
+    AND NEW.total_points >= min_points
+  ORDER BY min_points DESC
   LIMIT 1;
-  
-  -- Nếu rank thay đổi
-  IF new_rank_id IS NOT NULL AND (old_rank_id IS NULL OR old_rank_id != new_rank_id) THEN
+
+  -- If rank changed, update and log history
+  IF new_rank_id IS DISTINCT FROM old_rank_id THEN
     NEW.rank_id := new_rank_id;
-    
-    -- Ghi lịch sử thăng hạng
-    INSERT INTO public.rank_history (user_id, from_rank_id, to_rank_id, points_at_change)
-    VALUES (NEW.id, old_rank_id, new_rank_id, NEW.total_points);
+
+    -- Insert into rank_history
+    INSERT INTO rank_history (user_id, from_rank_id, to_rank_id)
+    VALUES (NEW.id, old_rank_id, new_rank_id);
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;
@@ -165,25 +165,19 @@ $$;
 ALTER FUNCTION "public"."generate_order_number"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."generate_ticket_code"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
+CREATE OR REPLACE FUNCTION "public"."generate_ticket_code"() RETURNS "text"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
-  event_code TEXT;
-  count_str TEXT;
-  new_code TEXT;
+  chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  result TEXT := '';
+  i INT;
 BEGIN
-  -- Lấy 6 ký tự đầu của event_id
-  event_code := SUBSTRING(NEW.event_id::TEXT FROM 1 FOR 6);
-  
-  SELECT LPAD((COUNT(*) + 1)::TEXT, 4, '0') INTO count_str
-  FROM public.tickets
-  WHERE event_id = NEW.event_id;
-  
-  new_code := 'TKT-' || UPPER(event_code) || '-' || count_str;
-  NEW.ticket_code := new_code;
-  
-  RETURN NEW;
+  FOR i IN 1..12 LOOP
+    result := result || SUBSTR(chars, FLOOR(RANDOM() * LENGTH(chars) + 1)::INT, 1);
+  END LOOP;
+  RETURN result;
 END;
 $$;
 
@@ -192,22 +186,35 @@ ALTER FUNCTION "public"."generate_ticket_code"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."generate_ticket_number"() RETURNS "text"
-    LANGUAGE "plpgsql"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
+  timestamp_part BIGINT;
+  random_part TEXT;
+  hash_part TEXT;
   new_number TEXT;
-  date_part TEXT;
-  sequence_part INT;
+  is_unique BOOLEAN := FALSE;
 BEGIN
-  date_part := TO_CHAR(NOW(), 'YYYYMMDD');
-  
-  SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_number FROM 13) AS INT)), 0) + 1
-  INTO sequence_part
-  FROM tickets
-  WHERE ticket_number LIKE 'TKT-' || date_part || '%';
-  
-  new_number := 'TKT-' || date_part || '-' || LPAD(sequence_part::TEXT, 4, '0');
-  
+  WHILE NOT is_unique LOOP
+    -- Use timestamp in microseconds
+    timestamp_part := EXTRACT(EPOCH FROM NOW())::BIGINT * 1000000;
+
+    -- Generate random string (6 chars)
+    random_part := UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 6));
+
+    -- Generate hash from timestamp + random (8 chars)
+    hash_part := UPPER(SUBSTRING(MD5(timestamp_part::TEXT || random_part) FROM 1 FOR 8));
+
+    -- Format: TK-HASH-RANDOM (e.g., TK-A3F8B9C2-X7Y4Z1)
+    new_number := 'TK-' || hash_part || '-' || random_part;
+
+    -- Check uniqueness
+    SELECT NOT EXISTS(
+      SELECT 1 FROM tickets WHERE ticket_number = new_number
+    ) INTO is_unique;
+  END LOOP;
+
   RETURN new_number;
 END;
 $$;
@@ -550,6 +557,22 @@ $$;
 ALTER FUNCTION "public"."set_order_number"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_ticket_number"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+BEGIN
+  IF NEW.ticket_number IS NULL THEN
+    NEW.ticket_number := generate_ticket_number();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."set_ticket_number"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_transaction_code"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -586,26 +609,27 @@ ALTER FUNCTION "public"."update_event_attendees"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."update_profile_points_on_transaction"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 BEGIN
   -- Update profile points
   UPDATE profiles
-  SET 
+  SET
     current_points = current_points + NEW.points,
     total_points = total_points + NEW.points,
-    lifetime_points = CASE 
+    lifetime_points = CASE
       WHEN NEW.points > 0 THEN lifetime_points + NEW.points
       ELSE lifetime_points
     END,
     updated_at = NOW()
   WHERE id = NEW.user_id;
-  
+
   -- Update balance_after in the transaction
   UPDATE point_transactions
   SET balance_after = (SELECT current_points FROM profiles WHERE id = NEW.user_id)
   WHERE id = NEW.id;
-  
+
   RETURN NEW;
 END;
 $$;
@@ -1502,6 +1526,10 @@ CREATE OR REPLACE TRIGGER "set_order_number_trigger" BEFORE INSERT ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "set_ticket_number_trigger" BEFORE INSERT ON "public"."tickets" FOR EACH ROW EXECUTE FUNCTION "public"."set_ticket_number"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_transaction_code_trigger" BEFORE INSERT ON "public"."orders" FOR EACH ROW EXECUTE FUNCTION "public"."set_transaction_code"();
 
 
@@ -1728,31 +1756,11 @@ CREATE POLICY "Admins full access to categories" ON "public"."event_categories" 
 
 
 
-CREATE POLICY "Admins full access to orders" ON "public"."orders" USING ((EXISTS ( SELECT 1
-   FROM "public"."admin_users"
-  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true)))));
-
-
-
-CREATE POLICY "Admins full access to tickets" ON "public"."tickets" USING ((EXISTS ( SELECT 1
-   FROM "public"."admin_users"
-  WHERE (("admin_users"."user_id" = "auth"."uid"()) AND ("admin_users"."is_active" = true)))));
-
-
-
-CREATE POLICY "Anyone can create orders" ON "public"."orders" FOR INSERT WITH CHECK (true);
-
-
-
 CREATE POLICY "Anyone can view active roles" ON "public"."roles" FOR SELECT USING (("is_active" = true));
 
 
 
 CREATE POLICY "Anyone can view active vouchers" ON "public"."vouchers" FOR SELECT USING (("is_active" = true));
-
-
-
-CREATE POLICY "Anyone can view by order number" ON "public"."orders" FOR SELECT USING (true);
 
 
 
@@ -1794,25 +1802,11 @@ CREATE POLICY "Users can view own order activities" ON "public"."order_activitie
 
 
 
-CREATE POLICY "Users can view own orders" ON "public"."orders" FOR SELECT USING ((("user_id" = "auth"."uid"()) OR ("customer_email" = (( SELECT "users"."email"
-   FROM "auth"."users"
-  WHERE ("users"."id" = "auth"."uid"())))::"text")));
-
-
-
 CREATE POLICY "Users can view own profile" ON "public"."profiles" FOR SELECT USING (("auth"."uid"() = "id"));
 
 
 
 CREATE POLICY "Users can view own rank history" ON "public"."rank_history" FOR SELECT USING (("auth"."uid"() = "user_id"));
-
-
-
-CREATE POLICY "Users can view own tickets" ON "public"."tickets" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM "public"."orders"
-  WHERE (("orders"."id" = "tickets"."order_id") AND (("orders"."user_id" = "auth"."uid"()) OR ("orders"."customer_email" = (( SELECT "users"."email"
-           FROM "auth"."users"
-          WHERE ("users"."id" = "auth"."uid"())))::"text"))))));
 
 
 
@@ -1846,9 +1840,6 @@ ALTER TABLE "public"."ranks" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."roles" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."tickets" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."user_vouchers" ENABLE ROW LEVEL SECURITY;
@@ -2115,6 +2106,12 @@ GRANT ALL ON FUNCTION "public"."set_order_number"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."set_ticket_number"() TO "anon";
+GRANT ALL ON FUNCTION "public"."set_ticket_number"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_ticket_number"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "anon";
 GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_transaction_code"() TO "service_role";
@@ -2310,9 +2307,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
-
 
 
 
